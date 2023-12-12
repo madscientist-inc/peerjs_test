@@ -1,0 +1,207 @@
+<!-- 
+◆準備
+sudo apt install nodejs
+sudo apt install npm
+npm init -y
+npm install peer
+◆Door側起動コマンド
+npx peerjs --port 9000 
+-->
+
+<!-- 住人       -->
+<!-- Client2    -->
+<!--  -->
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>resident</title>
+    <script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js"></script>
+    </head>
+    <body>
+        <h1>resident(住人) Client2</h1>
+        <div><span id="client1_req_stat"></span></div>
+        <div><span id="client2_call_stat"></span></div>
+        <div><span id="video_speaker_stat"></span></div>
+        <div><span id="stream_pub_stat"></span></div>
+        <div><span id="mic_mute_stat"></span></div>
+        <input type="button" value="コンタクトボタン:peerjs" onclick="send_message()" />
+        <input type="button" value="コンタクトボタン:websocket" onclick="send_message()" />
+        <input type="button" value="Video音声再生有効" onclick="video_play(1)" />
+        <input type="button" value="Video音声再生無効" onclick="video_play(0)" />
+        <input type="button" value="Stream配信有効" onclick="stream_publish(1)" />
+        <input type="button" value="Stream配信無効" onclick="stream_publish(0)" />
+        <input type="button" value="Mute Enable" onclick="mute_enable()" />
+        <div>
+            <!-- microphone gain: <input type="range" id="microphoneLevel" value="1.0" min="0.0" max="2.0" step="0.1" oninput="updateMicrophoneLevel(this.value)" /> -->
+            microphone gain: <input type="range" id="microphoneLevel" value="1.0" min="0.0" max="2.0" step="0.1" />
+            <span id="microphoneLevelText"></span>
+        </div>
+    </body>
+    <div>
+        <video id="video" width="100%" autoplay></video>
+    </div>
+    <!-- <div>
+        <audio id="audio" controls autoplay></audio>
+    </div> -->
+    <script>
+        //コールステータス
+        const client2_call_stat_txt = document.getElementById("client2_call_stat");
+        client2_call_stat_txt.innerText = "■Client1通話状態：通話初期化"
+        var client2_call_stat = 0;
+        function client2_call_stat_chg(stat) {
+            client2_call_stat = stat;
+            if(client2_call_stat == 0){
+                client2_call_stat_txt.innerText = "■Client2通話状態：通話初期化"
+            }else if(client2_call_stat == 1){
+                client2_call_stat_txt.innerText = "■Client2通話状態：通話可能"
+            }else if(client2_call_stat == 2){
+                client2_call_stat_txt.innerText = "■Client2通話状態：通話中"
+            }else if(client2_call_stat == 3){
+                client2_call_stat_txt.innerText = "■Client2通話状態：通話不可"
+            }else{
+                //Do Nothing.
+            }
+        }
+
+        //コールリクエスト
+        const client1_req_stat_txt = document.getElementById("client1_req_stat");
+        client1_req_stat_txt.innerText = "■Client1要求状態：要求なし"
+        var client1_req_stat = 0;
+        function client1_req_stat_chg(stat) {
+            client1_req_stat = stat;
+            if(client1_req_stat == 0){
+                client1_req_stat_txt.innerText = "■Client1要求状態：要求なし"
+            }else if(client1_req_stat == 1){
+                client1_req_stat_txt.innerText = "■Client1要求状態：要求中"
+            }else if(client1_req_stat == 2){
+                client1_req_stat_txt.innerText = "■Client1要求状態：要求承認"
+            }else{
+                //Do Nothing.
+            }
+        }
+
+        //Video音声有効無効設定
+        const video_speaker_stat = document.getElementById("video_speaker_stat");
+        video_speaker_stat.innerText = "■Video音声：有効"
+        var video_play_enable = 1;
+        const video = document.getElementById("video");
+        function video_play(enable) {
+            const tracks = video.srcObject.getAudioTracks();
+            video_play_enable = enable;
+            if(video_play_enable){
+                video_speaker_stat.innerText = "■Video音声：有効"
+            }else{
+                video_speaker_stat.innerText = "■Video音声：無効"
+            }
+            tracks.forEach(track => {
+                track.enabled = enable;
+            });
+        }
+
+        //Stream配信有効無効設定
+        const stream_pub_stat = document.getElementById("stream_pub_stat");
+        stream_pub_stat.innerText = "■Stream配信：有効"
+        var stream_enable = 1;
+        function stream_pub_stat_txt(enable) {
+            stream_enable = enable;
+            if(stream_enable){
+                stream_pub_stat.innerText = "■Stream配信：有効"
+            }else{
+                stream_pub_stat.innerText = "■Stream配信：無効"
+            }  
+        }
+
+        const peer = new Peer('client2', {
+            host: 'localhost',
+            // host: '192.168.1.10',
+            port: 9000,
+            path: '/',
+        });
+
+        var client2_stream;
+        var microphoneGain = 1.0;
+
+        navigator.mediaDevices
+            .getUserMedia({
+            video: false,
+            // video: true,
+            audio: true,
+            })
+            .then((stream) => {
+                const audioContext = new AudioContext();
+                const gainNode = audioContext.createGain();
+                const microphoneLevel = document.getElementById("microphoneLevel");
+                const microphoneLevelText = document.getElementById("microphoneLevelText");
+                microphoneLevel.addEventListener("change",(e) => {
+                    const value = e.target.value;
+                    console.log(`gain: ${value}`);
+                    gainNode.gain.value = value;
+                    microphoneLevelText.innerText = value;
+                });
+                const changeEvent = new Event("change")
+                microphoneLevel.dispatchEvent(changeEvent)
+                const src = audioContext.createMediaStreamSource(stream);
+                const dst = audioContext.createMediaStreamDestination();
+                //src.connect(audioContext.destination);
+                src.connect(gainNode);
+                //set volume
+                gainNode.gain.node = microphoneGain;
+                //set output
+                gainNode.connect(dst);
+                dst.stream.addTrack(stream.getAudioTracks()[0]);
+                //dst.stream.addTrack(stream.getVideoTracks()[0]);
+                client2_stream = dst.stream;
+                //if(stream_enable){
+                    peer.call("client1", client2_stream);
+                //}
+            })
+            .catch((e) => {
+                console.log(e);
+            });
+
+            //ストリーム受信
+            peer.on('call',function(call) {
+                call.answer();
+                call.on('stream',(stream) =>{
+                    console.log("[住人][client]stream受信")
+                    // console.log(stream.getAudioTracks());
+                    video.srcObject = stream;
+                    const playPromise = video.play();
+                    if (playPromise !== null){
+                        playPromise.catch(() => { video.play();})
+                    }
+                    
+                    peer.call('client1',client2_stream);
+                });
+            });
+
+            peer.on('connection', (connect) => {
+                console.log('[住人][client2]他のクライアントからの接続あり');
+                connect.on('open', () => {
+                    console.log('[住人][client2]client2(住人側)が接続できました。');
+                });
+                connect.on('data', (data) => {
+                    console.log('client1(ドア側)が接続できました。');
+                    console.log(`[住人][client2]client1からのメッセージ:${data}`)
+                    connect.send("[住人][client2]こんにちはclient2(住人側)です。")
+                });
+            });
+        
+            // メッセージを送信する関数
+            let jsonData = {
+            "call_req": 0,
+            "call_acc": 0,
+            };
+            let send_jsonData = JSON.stringify(jsonData);
+            function send_message() {
+                const connect = peer.connect('client1');
+                connect.on('open', () => {
+                    connect.send(send_jsonData);
+                    console.log(`[住人][client2]メッセージを送信しました: ${message}`);
+                });
+            }
+
+    </script>
+</html>
