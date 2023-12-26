@@ -1,0 +1,253 @@
+<!-- 
+◆準備
+sudo apt install nodejs
+sudo apt install npm
+npm init -y
+npm install peer
+◆Door側起動コマンド
+npx peerjs --port 9000 
+-->
+
+<!-- 住人       -->
+<!-- Client2    -->
+<!--  -->
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>resident</title>
+    <script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js"></script>
+    </head>
+    <body>
+        <h1>resident(住人) Client2</h1>
+        <h3>Client2 status</h3>
+        <div><span id="client2_call_stat"></span></div>
+        <div><span id="client2_call_req"></span></div>
+        <div><span id="client2_call_acc"></span></div>
+        <h3>Client1 status</h3>
+        <div><span id="client1_call_stat"></span></div>
+        <div><span id="client1_call_req"></span></div>
+        <div><span id="client1_call_acc"></span></div>
+        <input type="button" value="コンタクトボタン" onclick='contact_btn("client1")' />
+
+    </body>
+    <div>
+        <video id="video" width="100%" autoplay></video>
+    </div>
+    <!-- <div>
+        <audio id="audio" controls autoplay></audio>
+    </div> -->
+    <script>
+
+        let jsonData = {
+            "call_stat": 0,
+            "call_req": 0,
+            "call_acc": ""
+        };
+
+        let client1_jsonData = {
+            "call_stat": 0,
+            "call_req": 0,
+            "call_acc": ""
+        };
+
+        const peer = new Peer('client2', {
+            host: 'localhost',
+            // host: '192.168.1.10',
+            port: 9000,
+            path: '/',
+        });
+
+        let client2_stream;
+        let dataConnection;
+
+        navigator.mediaDevices
+            .getUserMedia({
+            video: false,
+            // video: true,
+            audio: true,
+            })
+            .then((stream) => {
+                client2_stream = stream;
+                peer.call("client1", client2_stream);
+
+            })
+            .catch((e) => {
+                console.log(e);
+            });
+
+            //ストリーム受信
+            //コールされたときに発火する
+            peer.on('call',function(call) {
+                call.answer();
+                call.on('stream',(stream) =>{
+                    console.log("[住人][client]stream受信")
+                    // console.log(stream.getAudioTracks());
+                    video.srcObject = stream;
+                    const playPromise = video.play();
+                    if (playPromise !== null){
+                        playPromise.catch(() => { video.play();})
+                    }
+                    peer.call('client1',client2_stream);
+                    dataConnection = peer.connect("client1");
+                    jsonData.call_stat = 1;
+                    MUTE(true);
+                    // MUTE(false);
+                });
+            });
+
+            //接続されたときに発火する
+            peer.on('connection', (connect) => {
+                console.log('[client2]他のクライアントからの接続あり');
+                connect.on('open', () => {
+                    console.log('[client2]client1が接続できました。');
+                    // Client2に接続
+                    // dataConnection = 
+                    dataConnection = peer.connect("client1");//*********************
+                    setInterval(sendData, 1000);//****************************
+                });
+                connect.on('data', (data) => {
+                    // console.log('client1(ドア側)が接続できました。');
+                    console.log("受信データ：",data);
+                    client1_jsonData = data;
+                    client1_status();
+                    client2_status();
+                    // connect.send(data);
+                });
+            });
+            // 接続が確立されたときの処理
+
+            // Client1に接続
+            dataConnection = peer.connect("client1");
+        
+            function sendData() {
+                //const jsonData = { key: 'value' };
+
+                // if (dataConnection && dataConnection.open) {
+                    dataConnection.send(jsonData);
+                    console.log('Client2 Sent data:', jsonData);
+                // }
+            }
+
+            function handleReceivedData(data) {
+                // 受信したデータに対する処理を実装
+                console.log('Client2 Handling received data:', data);
+            }
+
+            //Client2に接続
+            // peer.on('open', (id) => {
+            //     console.log('Client2 ID:', id);
+
+            //     // Client2に接続
+            //     dataConnection = peer.connect("client1");
+
+            //     dataConnection.on('open', () => {
+            //         console.log('Client2 connected to Client1');
+
+            //         // 定期的にデータを送信
+            //         setInterval(sendData, 10000);
+            //     });
+
+            //     dataConnection.on('data', (data) => {
+            //         console.log('Client2 Received data:', data);
+            //         handleReceivedData(data);
+            //     });
+            // });
+
+            
+            function contact_btn(client)
+            {
+                //コールする
+                if(
+                    (client1_jsonData.call_stat == 1 ) &&    //相手通話可能
+                    (client1_jsonData.call_req  == 0 ))      //相手通話要求なし                    )
+                {
+                    jsonData.call_acc = client;
+                    jsonData.call_req = 1;
+                }
+                //コールに出る
+                if(
+                    (client1_jsonData.call_stat == 1 ) &&     //相手通話可能
+                    (client1_jsonData.call_req == 1 ) &&      //相手通話要求
+                    (client1_jsonData.call_acc  == "client2" )//相手の通話相手が自分
+                    )
+                {
+                    jsonData.call_stat = 2;
+                    jsonData.call_acc = client;
+                    jsonData.call_req = 0;
+                    //MUTE解除処理
+                    MUTE(false);
+                }
+                //コールを切る
+                if(
+                    (client1_jsonData.call_stat == 2 ) &&     //相手通話中
+                    (client1_jsonData.call_acc  == "client2" )//相手の通話相手が自分
+                    )
+                {
+                    jsonData.call_stat = 1;
+                    jsonData.call_acc = "";
+                    jsonData.call_req = 0;
+                    //MUTE設定処理
+                    MUTE(true);
+                }
+            }
+
+            function MUTE(flag)
+            {
+                var audioTrack = client2_stream.getAudioTracks()[0];
+                var video = document.getElementById("video");
+                if(flag){
+                    audioTrack.enable = true;
+                    // video.muted = true;
+                }else{
+                    audioTrack.enable = false;
+                    // video.muted = false;
+                }
+            }
+
+            function client2_status()
+            {
+                //コール受け入れられた
+                if(
+                    (client1_jsonData.call_stat == 2)&&         //相手通話中
+                    (client1_jsonData.call_acc  == "client2" )&&//相手の通話相手が自分
+                    (jsonData.call_req == 1)
+                    )
+                {
+                    jsonData.call_stat = 2;
+                    jsonData.call_req = 0
+                    //MUTE解除処理
+                    MUTE(false);
+                }
+                //コールを切られた
+                if(
+                    (client1_jsonData.call_stat == 1)&&   //相手通話可能
+                    (client1_jsonData.call_acc == "")&&   //相手の通話相手がいない
+                    (jsonData.call_stat == 2)             //自分が通話中
+                    )
+                {
+                    jsonData.call_stat = 1;
+                    jsonData.call_acc = "";
+                    //MUTE設定処理
+                    MUTE(true);
+                }
+                const client2_call_stat_txt =   document.getElementById("client2_call_stat");
+                const client2_call_req_txt =    document.getElementById("client2_call_req");
+                const client2_call_acc_txt =    document.getElementById("client2_call_acc");
+                client2_call_stat_txt.innerText =   "call_stat  :   " + jsonData.call_stat
+                client2_call_req_txt.innerText =    "call_req   :   " + jsonData.call_req
+                client2_call_acc_txt.innerText =    "call_acc   :   " + jsonData.call_acc
+            }
+
+            function client1_status()
+            {
+                const client1_call_stat_txt =   document.getElementById("client1_call_stat");
+                const client1_call_req_txt =    document.getElementById("client1_call_req");
+                const client1_call_acc_txt =    document.getElementById("client1_call_acc");
+                client1_call_stat_txt.innerText =   "call_stat  :   " + client1_jsonData.call_stat
+                client1_call_req_txt.innerText =    "call_req   :   " + client1_jsonData.call_req
+                client1_call_acc_txt.innerText =    "call_acc   :   " + client1_jsonData.call_acc
+            }
+    </script>
+</html>

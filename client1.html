@@ -21,24 +21,15 @@ npx peerjs --port 9000
     </head>
     <body>
         <h1>Contoroller(ドア) Client1</h1>
-        <div><span id="client2_req_stat"></span></div>
+        <h3>Client1 status</h3>
         <div><span id="client1_call_stat"></span></div>
-        <div><span id="audio_speaker_stat"></span></div>
-        <div><span id="stream_pub_stat"></span></div>
-        <div><span id="mic_mute_stat"></span></div>
-        <input type="button" value="コンタクトボタン:peerjs" onclick="send_message()" />
-        <input type="button" value="コンタクトボタン:websocket" onclick="send_message1()" />
-        <input type="button" value="JSON送信" onclick="sendJSON()" />
-        <input type="button" value="Audio音声再生有効" onclick="audio_play(1)" />
-        <input type="button" value="Audio音声再生無効" onclick="audio_play(0)" />
-        <input type="button" value="Stream配信有効" onclick="stream_publish(1)" />
-        <input type="button" value="Stream配信無効" onclick="stream_publish(0)" />
-        <input type="button" value="Mute Enable" onclick="mute_enable()" />
-        <div>
-            <!-- microphone gain: <input type="range" id="microphoneLevel" value="1.0" min="0.0" max="2.0" step="0.1" oninput="updateMicrophoneLevel(this.value)" /> -->
-            microphone gain: <input type="range" id="microphoneLevel" value="1.0" min="0.0" max="2.0" step="0.1" />
-            <span id="microphoneLevelText"></span>
-        <div>
+        <div><span id="client1_call_req"></span></div>
+        <div><span id="client1_call_acc"></span></div>
+        <h3>Client2 status</h3>
+        <div><span id="client2_call_stat"></span></div>
+        <div><span id="client2_call_req"></span></div>
+        <div><span id="client2_call_acc"></span></div>
+        <input type="button" value="コンタクトボタン" onclick='contact_btn("client2")' />        
     </body>
     <!-- <div>
         <video id="video" style="width:100%" ></video>
@@ -50,82 +41,14 @@ npx peerjs --port 9000
         let jsonData = {
             "call_stat": 0,
             "call_req": 0,
-            "call_acc": 0,
-            "seat_alm": 0,
-            "signal": 0
+            "call_acc": "",
         };
 
-        //コールステータス
-        const client1_call_stat_txt = document.getElementById("client1_call_stat");
-        client1_call_stat_txt.innerText = "■Client1通話状態：通話初期化"
-        var client1_call_stat = 0;
-        function client1_call_stat_chg(stat) {
-            client1_call_stat = stat;
-            if(client1_call_stat == 0){
-                client1_call_stat_txt.innerText = "■Client1通話状態：通話初期化"
-            }else if(client1_call_stat == 1){
-                client1_call_stat_txt.innerText = "■Client1通話状態：通話可能"
-            }else if(client1_call_stat == 2){
-                client1_call_stat_txt.innerText = "■Client1通話状態：通話中"
-            }else if(client1_call_stat == 3){
-                client1_call_stat_txt.innerText = "■Client1通話状態：通話不可"
-            }else{
-                //Do Nothing.
-            }
-        }
-        function sendJSON() {
-            const connect = peer.connect('client2');
-            connect.on('open', () => {
-                connect.send(JSON.stringify(jsonData));
-                console.log('[Door][client1]JSON data sent to client2:', jsonData);
-            });
-        }
-        //コールリクエスト
-        const client2_req_stat_txt = document.getElementById("client2_req_stat");
-        client2_req_stat_txt.innerText = "■Client2要求状態：要求なし"
-        var client2_req_stat = 0;
-        function client2_req_stat_chg(stat) {
-            client2_req_stat = stat;
-            if(client2_req_stat == 0){
-                client2_req_stat_txt.innerText = "■Client2要求状態：要求なし"
-            }else if(client2_req_stat == 1){
-                client2_req_stat_txt.innerText = "■Client2要求状態：要求中"
-            }else if(client2_req_stat == 2){
-                client2_req_stat_txt.innerText = "■Client2要求状態：要求承認"
-            }else{
-                //Do Nothing.
-            }
-        }
-        //Audio音声有効無効設定
-        const audio_speaker_stat = document.getElementById("audio_speaker_stat");
-        audio_speaker_stat.innerText = "■Audio音声：有効"
-        var audio_play_enable = 1;
-        const audio = document.getElementById("audio");
-        function audio_play(enable) {
-            const tracks = audio.srcObject.getAudioTracks();
-            audio_play_enable = enable;
-            if(audio_play_enable){
-                audio_speaker_stat.innerText = "■Audio音声：有効"
-            }else{
-                audio_speaker_stat.innerText = "■Audio音声：無効"
-            }
-            tracks.forEach(track => {
-                track.enabled = enable;
-            });
-        }
-
-        //Stream配信有効無効設定
-        const stream_pub_stat = document.getElementById("stream_pub_stat");
-        stream_pub_stat.innerText = "■Stream配信：有効"
-        var stream_enable = 1;
-        function stream_pub_stat_txt(enable) {
-            stream_enable = enable;
-            if(stream_enable){
-                stream_pub_stat.innerText = "■Stream配信：有効"
-            }else{
-                stream_pub_stat.innerText = "■Stream配信：無効"
-            }  
-        }
+        let client2_jsonData = {
+            "call_stat": 0,
+            "call_req": 0,
+            "call_acc": ""
+        };
 
         const peer = new Peer('client1', {
             host: '192.168.1.3',
@@ -133,106 +56,195 @@ npx peerjs --port 9000
             path: '/',
         });
 
-        var client1_stream;
-        var microphoneGain = 1.0;
+        let connect;
+        let client1_stream;
+        let dataConnection;
 
         navigator.mediaDevices
-            .getUserMedia({
-                video: true,
-                audio: true,
-            })
-            .then((stream) => {
-                const audioContext = new AudioContext();
-                const gainNode = audioContext.createGain();
-                const microphoneLevel = document.getElementById("microphoneLevel");
-                const microphoneLevelText = document.getElementById("microphoneLevelText");
-                microphoneLevel.addEventListener("change",(e) => {
-                    const value = e.target.value;
-                    console.log(`gain: ${value}`);
-                    gainNode.gain.value = value;
-                    microphoneLevelText.innerText = value;
-                });
-                const changeEvent = new Event("change");
-                microphoneLevel.dispatchEvent(changeEvent);
-                const src = audioContext.createMediaStreamSource(stream);
-                const dst = audioContext.createMediaStreamDestination();
-                src.connect(gainNode);
-                //set volume
-                gainNode.gain.node = microphoneGain;
-                //set output
-                gainNode.connect(dst);
-                //dst.stream.addTrack(stream.getAudioTracks()[0]);
-                dst.stream.addTrack(stream.getVideoTracks()[0]);
-                client1_stream = dst.stream;
-                //if(stream_enable){
-                    peer.call("client2",client1_stream);//ストリーム送信
-                //}
-            })
-            .catch((e) => {
-                console.log(e);
+        .getUserMedia({
+            video: true,
+            audio: true,
+        })
+        .then((stream) => {
+            client1_stream = stream;
+            peer.call("client2",client1_stream);//ストリーム送信
+            dataConnection = peer.connect("client2");
+        })
+        .catch((e) => {
+            console.log(e);
+        });
+
+        function sendData() {
+            // const jsonData = { key: 'value' };
+
+            // if (dataConnection && dataConnection.open) {
+                dataConnection.send(jsonData);
+                console.log('Client1 Sent data:', jsonData);
+            // }
+        }
+
+        function handleReceivedData(data) {
+            // 受信したデータに対する処理を実装
+            console.log('Client1 Handling received data:', data);
+        }
+
+        //Client2に接続
+        peer.on('open', (id) => {
+            console.log('Client1 ID:', id);
+
+            // Client2に接続
+            dataConnection = peer.connect("client2");
+
+            dataConnection.on('open', () => {
+                console.log('Client1 connected to Client2');
+
+                // 定期的にデータを送信
+                setInterval(sendData, 1000);
             });
 
-            //ストリーム受信
-            peer.on('call',function(call) {
-                call.answer();
-                call.on('stream',(stream) =>{
-                    console.log("[Door][client1]stream受信");                
-                    // video.srcObject = stream;
-                    audio.srcObject = stream;
-                    // video.play();
-                    // const playPromise = video.play();
-                    // if (playPromise !== null){
-                    //     playPromise.catch(() => { video.play();});
-                    // }
-                    // audio.play();
-                    const playPromise = audio.play();
-                    if (playPromise !== null){
-                        playPromise.catch(() => { audio.play();});
-                    }
-                });
+            dataConnection.on('data', (data) => {
+                console.log('Client1 Received data:', data);
+                handleReceivedData(data);
             });
+        });
 
-            peer.on('connection', (connect) => {
-                console.log('[Door][client1]他のクライアントからの接続あり');
-                connect.on('open', () => {
-                    console.log('[Door][client1]client1(ドア側)が接続できました。');
-                });
-                connect.on('data', (data) => {
-                    // console.log('client1(ドア側)が接続できました。');
-                    console.log(`[Door][client1]clientからのメッセージ:${data}`);
-                    connect.send("[Door][client1]こんにちはclient1(ドア側)です。");
-                });
+        //ストリーム受信
+        //コールされたときに発火する
+        peer.on('call',function(call) {
+            call.answer();
+            call.on('stream',(stream) =>{
+                console.log("[Door][client1]stream受信");                
+                // video.srcObject = stream;
+                audio.srcObject = stream;
+                // video.play();
+                // const playPromise = video.play();
+                // if (playPromise !== null){
+                //     playPromise.catch(() => { video.play();});
+                // }
+                // audio.play();
+                const playPromise = audio.play();
+                if (playPromise !== null){
+                    playPromise.catch(() => { audio.play();});
+                }
+                jsonData.call_stat = 1;
+                MUTE(true);
+                // MUTE(false);
             });
+        });
 
-            // メッセージを送信する関数
-            function send_message() {
-                const connect = peer.connect('client2');
-                connect.on('open', () => {
-                    const message = "[Door][client1]こんにちは、client1にメッセージを送ります。";
-                    connect.send(message);
-                    console.log(`[Door][client1]メッセージを送信しました: ${message}`);
-                });
+        //接続されたときに発火する
+        peer.on('connection', (connect) => {
+            console.log('[Door][client1]他のクライアントからの接続あり');
+            connect.on('open', () => {
+                console.log('[Door][client1]client1(ドア側)が接続できました。');
+                // Client2に接続
+                // dataConnection = peer.connect("client2");
+            });
+            connect.on('data', (data) => {
+                // console.log('client1(ドア側)が接続できました。');
+                // console.log(`[Door][client1]clientからのメッセージ:${data}`);
+                console.log("受信データ：",data);
+                client2_jsonData = data;
+                client2_status();
+                client1_status();
+                // connect.send(data);
+            });
+        });
+                
+        function contact_btn(client)
+        {
+            //コールする
+            if(
+                (client2_jsonData.call_stat == 1 ) &&    //相手通話可能
+                (client2_jsonData.call_req  == 0 ))      //相手通話要求なし                    )
+            {
+                jsonData.call_acc = client;
+                jsonData.call_req = 1;
             }
-
-            //rangeバーの制御で音量を更新
-            function setupMicrophone(stream) {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioContext.createMediaStreamSource(stream);
-                const gainNode = audioContext.createGain();
-
-                source.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-
-                // ゲインの初期値を設定
-                gainNode.gain.value = microphoneGain;
+            //コールに出る
+            if(
+                (client2_jsonData.call_stat == 1 ) &&     //相手通話可能
+                (client2_jsonData.call_req == 1 ) &&     //相手通話要求
+                (client2_jsonData.call_acc  == "client1" )//相手の通話相手が自分
+                )
+            {
+                jsonData.call_stat = 2;
+                jsonData.call_acc = client;
+                jsonData.call_req = 0;
+                //MUTE解除処理
+                MUTE(false);
             }
-
-            //rangeバーの制御で音量を更新
-            function updateMicrophoneLevel(value) {
-                microphoneGain = parseFloat(value);
-                const microphoneLevelText = document.getElementById("microphoneLevelText");
-                microphoneLevelText.textContent = microphoneGain.toFixed(1);
+            //コールを切る
+            if(
+                (client2_jsonData.call_stat == 2 ) &&     //相手通話中
+                (client2_jsonData.call_acc  == "client1" )//相手の通話相手が自分
+                )
+            {
+                jsonData.call_stat = 1;
+                jsonData.call_acc = "";
+                jsonData.call_req = 0;
+                //MUTE設定処理
+                MUTE(true);
             }
+        }
+
+        function MUTE(flag)
+        {
+            var audioTrack = client1_stream.getVideoTracks()[0];
+            var video = document.getElementById("audio");
+            if(flag){
+                audioTrack.enable = true;
+                // video.muted = true;
+            }else{
+                audioTrack.enable = false;
+                // video.muted = false;
+            }
+        }
+
+        function client1_status()
+        {
+            //コール受け入れられた
+            if(
+                (client2_jsonData.call_stat == 2)&&         //相手通話中
+                (client2_jsonData.call_acc  == "client1" )&&//相手の通話相手が自分
+                (jsonData.call_req == 1)
+                )
+            {
+                jsonData.call_stat = 2;
+                jsonData.call_req = 0
+                //MUTE解除処理
+                MUTE(false);
+            }
+            //コールを切られた
+            if(
+                (client2_jsonData.call_stat == 1)&&   //相手通話可能
+                (client2_jsonData.call_acc == "")&&   //相手の通話相手がいない
+                (jsonData.call_stat == 2)             //自分が通話中
+                )
+            {
+                jsonData.call_stat = 1;
+                jsonData.call_acc = "";
+                //MUTE設定処理
+                MUTE(true);
+            }
+            const client1_call_stat_txt =   document.getElementById("client1_call_stat");
+            const client1_call_req_txt =    document.getElementById("client1_call_req");
+            const client1_call_acc_txt =    document.getElementById("client1_call_acc");
+            client1_call_stat_txt.innerText =   "call_stat  :   " + jsonData.call_stat
+            client1_call_req_txt.innerText =    "call_req   :   " + jsonData.call_req
+            client1_call_acc_txt.innerText =    "call_acc   :   " + jsonData.call_acc
+        }
+
+        function client2_status()
+        {
+            const client2_call_stat_txt =   document.getElementById("client2_call_stat");
+            const client2_call_req_txt =    document.getElementById("client2_call_req");
+            const client2_call_acc_txt =    document.getElementById("client2_call_acc");
+            client2_call_stat_txt.innerText =   "call_stat  :   " + client2_jsonData.call_stat
+            client2_call_req_txt.innerText =    "call_req   :   " +  client2_jsonData.call_req
+            client2_call_acc_txt.innerText =    "call_acc   :   " +  client2_jsonData.call_acc
+        }
+
 
         // websocket
         const socket = new WebSocket('ws://localhost:5002');
@@ -251,7 +263,6 @@ npx peerjs --port 9000
             // 加工したデータをサーバーに送り返す
             socket.send(JSON.stringify(receivedData));
         });
-
     </script>
 
 </html>
